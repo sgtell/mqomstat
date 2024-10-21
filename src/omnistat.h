@@ -104,4 +104,16 @@ extern struct omst_reg *omniregs;
 extern int omst_nregs;
 extern int omst_celsius;
 
+// some omnistat register addresses known to our code
+
+#define OM_REGADDR_MODEL	0x49
+#define OM_REGADDR_COOL_SETPT	0x3B
+
+#define OM_REGADDR_STATUS	0x3B
+#define OM_REGADDR_STATUS_LEN	14
+
+//#define OM_REGADDR_MODE		0x3f
+#define OM_REGADDR_CURRENT_TEMP	0x40
+#define OM_REGADDR_OUTPUT_STATE 0x48
+
 #endif /* OMNISTAT_H */

@@ -55,7 +55,7 @@
 typedef struct _OmsMessage OmsMessage;
 typedef struct _OmsNode OmsNode;
 
-// structure for omnistat communication channel - one serial port
+// structure for omnistat communication channel - aka one serial port
 struct _OmsChan {
 	char *fname;
 	int fd;
@@ -103,11 +103,24 @@ struct _OmsMessage {
 };
 typedef struct _OmsMessage OmsMessage;
 
+// data about each register in the thermostat
+struct _OmsRegVal {
+	unsigned char val; 	// raw value
+	time_t vtime;		// time last value recieved
+};
+typedef struct _OmsRegVal OmsRegVal;
+
+#define NODE_DEAD	0
+#define NODE_WAKEUP	1   // seen some replies but not enough to call it alive.
+#define NODE_ALIVE	2   // seen requisite replies, and one recently enough.
+
 // data about a single thermostat on the multidrop serial port
 struct _OmsNode {
 	OmsChan *omc;
 	int addr;
 	char *name;
+	int model;
+	int state;
 
 	// todo many more fields to come about the current state of this thermostat
 	float setpoint_cool;
@@ -117,9 +130,9 @@ struct _OmsNode {
 	int fanmode;
 	int hold;
 	time_t last_resp;
+
+	OmsRegVal reg_cache[256];
 };
-
-
 
 
 extern int mqtt_setup();
@@ -132,10 +145,12 @@ void oms_chan_recv(OmsChan *omc); // called when select() says there's somthing 
 void oms_chan_dispatch(OmsChan *omc);
 extern void oms_chan_print(OmsChan *omc);
 OmsNode *oms_chan_add_node(OmsChan *omc,  guint node, char *name);
+void oms_chan_timeout_handler(OmsChan *omc, OmsMessage *msg, int err);
 void oms_chan_reply_handler(OmsChan *omc, OmsMessage *msg, int error);
 
 extern void oms_chan_reply_regdata(OmsNode *nd, OmsMessage *msg);
 extern void oms_nd_regdata(OmsNode *nd, guint regaddr, guchar val);
+extern void oms_nd_update_state(OmsNode *nd);
 void oms_msg_print(OmsMessage *msg, char *str);
 void per_minute_init();
 	

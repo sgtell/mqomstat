@@ -20,6 +20,7 @@
 #include <omnistat.h>
 
 extern 	OmsChan *g_omc;
+extern int g_verbose;
 
 void oms_chan_reply_getg(OmsNode *nd, OmsMessage *msg);
 int timeval_subtract (struct timeval *result,
@@ -109,13 +110,13 @@ oms_chan_clear(void *p)
 	OmsChan *omc = (OmsChan *)p;
 	
 	fprintf(stderr, "Omnistat: timeout on %s\n", omc->fname);
-	// could log more about the message that went nowhere, before we drop it
 	omc->state =  KCH_STATE_IDLE;
 	if(omc->totimer) {
 		g_source_remove(omc->totimer);
 		omc->totimer = 0;
 	}
 	if(omc->outstanding) {
+		oms_chan_timeout_handler(omc, omc->outstanding, KE_TIMEOUT);
 		g_free(omc->outstanding);
 		omc->outstanding = NULL;
 	}
@@ -278,6 +279,22 @@ oms_chan_recv(OmsChan *omc)
         }
 }
 
+// called when there was a timeout waiting for reply
+void
+oms_chan_timeout_handler(OmsChan *omc, OmsMessage *msg, int err)
+{
+	OmsNode *nd;
+	guint mt = msg->rstatus & 0x0f;
+	guint nodeno = msg->nodeno;
+
+	if(!omc->nodes[nodeno]) {
+			fprintf(stderr, "timeout for nodeno %d but there's no node with that address\n");
+			return;
+	}
+	nd = omc->nodes[nodeno];
+	oms_nd_update_state(nd);   // might declare the node dead
+}
+
 // called with a complete message
 void
 oms_chan_reply_handler(OmsChan *omc, OmsMessage *msg, int err)
@@ -309,6 +326,9 @@ oms_chan_reply_handler(OmsChan *omc, OmsMessage *msg, int err)
 			break;
 		default:
 			
+		}
+		if(nd->state != NODE_ALIVE) {
+			oms_nd_update_state(nd);
 		}
 	} else {
 		if(omc->flags & KCH_FLAG_VERBOSE)
@@ -375,7 +395,25 @@ oms_nd_regdata(OmsNode *nd, guint regaddr, guchar val)
 {
 	if(nd->omc->flags & KCH_FLAG_VERBOSE) {
 		printf("reg[0x%02x]: newval 0x%02x\n", regaddr, val);
-	}	
+	}
+	nd->reg_cache[regaddr].val = val;
+	nd->reg_cache[regaddr].vtime = time(NULL);
+
+	char dbuf[64];
+	char topic[128];
+	// TODO better framework for deciding what to publish, and topics for each
+	if(regaddr == OM_REGADDR_CURRENT_TEMP) {
+		nd->cur_temp = omcf_temp(val, 1);
+		sprintf(dbuf, "%.1f", nd->cur_temp);
+		sprintf(topic, "omnistat/%s/current", nd->name);
+		mqtt_publish(topic, dbuf);
+	}
+	if(regaddr == OM_REGADDR_MODEL) {
+		nd->model = val;
+		omcs_model(dbuf, nd->model);
+		sprintf(topic, "omnistat/%s/model", nd->name);
+		mqtt_publish(topic, dbuf);
+	}
 }
 
 void
@@ -398,19 +436,19 @@ oms_msg_print(OmsMessage *msg, char *str)
 	int i;
 	if(str)
 		printf("om_msg(\"%s\") ", str);
-	printf("id=%d slen=%d scmd=%d ", msg->id, msg->slength, msg->sdata[0]);
+	printf("id=%d scmd=%d slen=%d", msg->id, msg->sdata[0], msg->slength);
 	if(msg->slength > 1) {
-		printf("(");
+		printf(":(");
 		for(i = 1; i < msg->slength; i++)
 			printf(" %02x", msg->sdata[i]);
-		printf(")");
+		printf(" )");
 	}
-	printf("   rlength=%d rstatus=%d:", msg->rlength, msg->rstatus);
+	printf("   rlength=%d rstatus=%d", msg->rlength, msg->rstatus);
 	if(msg->rlength > 0) {
-		printf("(");
+		printf(":(");
 		for(i = 0; i < msg->rlength; i++)
 			printf(" %02x", msg->rbuf[i]);
-		printf(")");
+		printf(" )");
 	}
 	printf("\n");
 }
@@ -533,8 +571,65 @@ void oms_node_set_clock(OmsNode *nd)
         oms_node_send_msg_setregs(nd, sbuf, 4);
 }
 
+// update the alive/intermediate/dead state of a node
+// safe to call this at any time, although usually called when a reply is recieved
+// or failed to be recieved due to a timeout.
+void
+oms_nd_update_state(OmsNode *nd)
+{
+	time_t now = time(NULL);
+	int oldstate = nd->state;
+	const int node_timeout = 130; // TODO configurable parameter
+	
+	if( (now - nd->last_resp) > node_timeout) {  
+		nd->state = NODE_DEAD;
+		if(nd->state != oldstate) {
+			if(g_verbose) { // TODO verbose per node? inherit from channel?
+				fprintf(stderr, "omnistat(%s) dead: %d seconds since last reponse (oldstate=%d)\n",
+					nd->name,  (now - nd->last_resp), oldstate );
+			}
+			char topic[128];
+			sprintf(topic, "omnistat/%s/state", nd->name);
+			mqtt_publish(topic, "dead");
+			// require recent model to call it alive again
+			nd->reg_cache[OM_REGADDR_MODEL].vtime = 0;
+		}
+	}
+	if( (now - nd->last_resp) < 10) {  // some recent reply
+		int recent_model  = (now - nd->reg_cache[OM_REGADDR_MODEL].vtime  < 3700);
+		int recent_temp  = (now - nd->reg_cache[OM_REGADDR_CURRENT_TEMP].vtime  < 130);
+		
+		// if recent device model and recent temp status, its alive
+		if( recent_model && recent_temp) {
+			nd->state = NODE_ALIVE;
+		} else {
+			nd->state = NODE_WAKEUP;
+			if(!recent_model) { // if not recent device model message, ask for it
+				oms_node_send_msg_readregs(nd, OM_REGADDR_MODEL, 1);
+			}
+			if(!recent_temp) { // if not recent temp status, query for that
+				oms_node_send_msg_readregs(nd, OM_REGADDR_STATUS, OM_REGADDR_STATUS_LEN);
+			}
+		}
+		if(nd->state != oldstate) {
+			fprintf(stderr, "omnistat(%s) state=%d oldstate=%d\n",
+				nd->name,  nd->state, oldstate );
+			if(nd->state == NODE_ALIVE) {
+				if(g_verbose) { // TODO verbose per node? inherit from channel?
+					fprintf(stderr, "omnistat(%s) alive\n", nd->name);
+				}
+				char topic[128];
+				sprintf(topic, "omnistat/%s/state", nd->name);
+				mqtt_publish(topic, "alive");
+				oms_node_set_clock(nd);
+			}
+		}
+	}
+}
+
 
 // do per-minute status collection for the list of known devices
+// TODO if node is dead, could send different probe message, perhaps less frequently.
 void
 oms_list_per_minute()
 {
@@ -544,8 +639,8 @@ oms_list_per_minute()
 	for(i = 1; i < 128; i++) {
 		if(omc->nodes[i]) {
 			nd = omc->nodes[i];
-			oms_node_send_msg_getg(nd);
-			oms_node_send_msg_readregs(nd, 0x3b, 14);
+//			oms_node_send_msg_getg(nd);
+			oms_node_send_msg_readregs(nd, OM_REGADDR_STATUS, OM_REGADDR_STATUS_LEN);
 		}
 	}
 }
@@ -560,6 +655,7 @@ oms_list_per_hour()
 		if(omc->nodes[i]) {
 			nd = omc->nodes[i];
 			oms_node_set_clock(nd);
+			oms_node_send_msg_readregs(nd, OM_REGADDR_MODEL, 1);
 		}
 	}
 }
@@ -583,7 +679,7 @@ per_minute_callback(gpointer data)
 	strftime(buf, 256, "%F %T", tm);
 	printf("per_minute_callback at %s.%06u\n", buf, now.tv_usec);
 
-	if(tm->tm_hour != last_hour) {
+	if(tm->tm_hour != last_hour) {    // causes this to be called at startup too
 		last_hour = tm->tm_hour;
 		printf("per_hour_callback at %s.%06u\n", buf, now.tv_usec);
 		oms_list_per_hour();
