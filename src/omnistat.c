@@ -16,7 +16,7 @@
 
 #include "omnistat.h"
 
-int omst_celsius;
+int omst_celsius = 1;
 
 /*
  * Register names, read/write classification,
@@ -88,22 +88,22 @@ struct omst_reg rc8x_regs[] = {
 	{ "reserved",           RESV, NULL,             NULL }, /* 39 */
 
 	{ "day",                  OK, omcs_day,  omcb_int  }, /* 3A */
-	{ "cool setpoint",     SV|OK, omcs_temp, omcb_temp }, /* 3B */
-	{ "heat setpoint",     SV|OK, omcs_temp, omcb_temp }, /* 3C */
-	{ "thermostat mode",   SV|OK, omcs_mode, omcb_mode }, /* 3D */
-	{ "fan mode",          SV|OK, omcs_fanm, omcb_fanm }, /* 3E */
-	{ "hold",              SV|OK, omcs_hold, omcb_hold  }, /* 3F */
+	{ "cool setpoint",   PUBA|SV|OK, omcs_temp, omcb_temp, "cool_set"}, /* 3B */
+	{ "heat setpoint",   PUBA|SV|OK, omcs_temp, omcb_temp, "heat_set"}, /* 3C */
+	{ "thermostat mode", PUBA|SV|OK, omcs_mode, omcb_mode, "tstatmode" }, /* 3D */
+	{ "fan mode",        PUBC|SV|OK, omcs_fanm, omcb_fanm, "fanmode"}, /* 3E */
+	{ "hold",            PUBC|SV|OK, omcs_hold, omcb_hold, "holdmode"  }, /* 3F */
 
-	{ "current temp",        ROK, omcs_temp,  NULL     }, /* 40 */
+	{ "current temp",   PUBA|ROK, omcs_temp,  NULL,     "current" }, /* 40 */
 	{ "seconds",              OK, omcs_int,  omcb_int  }, /* 41 */
 	{ "minutes",              OK, omcs_int,  omcb_int  }, /* 42 */
 	{ "hours",                OK, omcs_int,  omcb_int  }, /* 43 */
 	{ "outside temp",         OK, omcs_temp, omcb_temp }, /* 44 */
 	{ "reserved",           RESV, omcs_int,   NULL     }, /* 45 */
 	{ "RTP mode",          SV|OK, omcs_int,  omcb_int  }, /* 46 */
-	{ "current mode",        ROK, omcs_mode,  NULL     }, /* 47 */
-	{ "output status",       ROK, omcs_outst,   NULL     }, /* 48 */
-	{ "model",               ROK, omcs_model, NULL     }, /* 49 */
+	{ "current mode",   PUBA|ROK, omcs_mode,  NULL ,   "curmode"   }, /* 47 */
+	{ "output status",  PUBA|ROK, omcs_outst,   NULL,  "outstatus"   }, /* 48 */
+	{ "model",          PUBA|ROK, omcs_model, NULL,   "model"    }, /* 49 */
 };
 
 const int rc8x_nregs = sizeof(rc8x_regs)/sizeof(struct omst_reg);
@@ -559,6 +559,51 @@ void omcs_model(char *sp, unsigned char b)
 	}
 }
 
+struct omst_reg *
+om_model_table(unsigned char model)
+{
+	switch(model) {
+	case 0:
+	case 1:
+	case 8:
+	case 9:
+	case 16:
+	case 17:
+	case 34:
+	case 48:
+	case 49:
+	case 50:
+		return rc8x_regs;
+	case 0x78:
+		return rc2000_regs;
+	default:
+		return NULL;
+	}
+}
+
+int om_model_table_size(unsigned char model)
+{
+	switch(model) {
+	case 0:
+	case 1:
+	case 8:
+	case 9:
+	case 16:
+	case 17:
+	case 34:
+	case 48:
+	case 49:
+	case 50:
+		return rc8x_nregs;
+	case 0x78:
+		return rc2000_nregs;
+	default:
+		return 0;
+	}
+}
+
+
+
 /* operating and thermostat modes */
 static char *mode_strings[] = {"off", "heat", "cool", "auto", "em-heat"};
 static const int n_mode_strings = sizeof(mode_strings)/sizeof(char *);
@@ -656,3 +701,21 @@ omcs_outst(char *sp, unsigned char b)
 	if(b & 16)
 		strcat(sp, "|s2");
 }
+
+
+/*
+ * given a register address, and a value to/from that register, convert the value to a
+ * string, assuming the indicated omnistat model.
+ */
+void omcs_regval(char *str, unsigned char regaddr, unsigned char val, unsigned char model)
+{
+	struct omst_reg *regtab = om_model_table(model);
+	int max_regs = om_model_table_size(model);
+
+	if(regtab && regaddr <= max_regs) {
+		regtab[regaddr].cvt_str(str, val);
+	} else {
+		sprintf(str, "rc%02x:REG0x%02x_0x%02x", model, regaddr, val);
+	}
+}
+

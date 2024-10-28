@@ -75,7 +75,9 @@ extern void omcs_day(char *, unsigned char);
 extern void omcs_outst(char *, unsigned char);
 
 
+// UGH!  TODO: change this signature for all functions to take a max string buffer size!
 typedef void (*PFCS)(char *, unsigned char);
+
 typedef unsigned char (*PFCB)(char *);
 
 /* bit-mapped flags */
@@ -84,8 +86,9 @@ enum omreg_flags {RESV=0,       /* reserved register */
                   WOK = 2,      /* OK to write */
                   OK=3,         /* ROK|WOK */
                   SV=4,         /* OK to save/restore as group */
-                  OKG=3|4       /* SV|OK */
-                  
+                  OKG=3|4,       /* SV|OK */
+		  PUBA=8,	/* always publish when recieved */
+		  PUBC=16	/* publish when recieved only if changed */
 };      
 
 struct omst_reg {
@@ -93,6 +96,7 @@ struct omst_reg {
         enum omreg_flags flags; 
         PFCS cvt_str;   /* routine to convert register byte to string */
         PFCB cvt_byte;  /* routine to convert string to register byte */
+	char *topic;    /* or NULL */
 };
 
 extern struct omst_reg rc8x_regs[];
@@ -103,6 +107,11 @@ extern const int rc2000_nregs;
 extern struct omst_reg *omniregs;
 extern int omst_nregs;
 extern int omst_celsius;
+
+extern struct omst_reg *om_model_table(unsigned char model);
+extern int om_model_table_size (unsigned char model);
+
+extern void omcs_regval(char *str, unsigned char regaddr, unsigned char val, unsigned char model);
 
 // some omnistat register addresses known to our code
 

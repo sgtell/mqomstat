@@ -393,26 +393,34 @@ oms_chan_reply_regdata(OmsNode *nd, OmsMessage *msg)
 void
 oms_nd_regdata(OmsNode *nd, guint regaddr, guchar val)
 {
+	int model;
 	if(nd->omc->flags & KCH_FLAG_VERBOSE) {
 		printf("reg[0x%02x]: newval 0x%02x\n", regaddr, val);
 	}
+	if(regaddr == OM_REGADDR_MODEL)
+		nd->model = val;
+	model = nd->model;   // special case because we need the model code to do the others!
+
+	char dbuf[MQSTRSIZE];
+	char topic[MQSTRSIZE];
+	
+	struct omst_reg *regtab = om_model_table(model);
+	int max_regs = om_model_table_size(model);
+	if(regtab && regaddr < max_regs) {
+		if(regtab[regaddr].flags & PUBA
+		   || ( (regtab[regaddr].flags & PUBC)
+			&& (val != nd->reg_cache[regaddr].val))) {
+			snprintf(topic, MQSTRSIZE, "omnistat/%s/%s", nd->name, regtab[regaddr].topic);
+			omcs_regval(dbuf, regaddr, val, model);
+			mqtt_publish(topic, dbuf);
+		}
+	}
+
 	nd->reg_cache[regaddr].val = val;
 	nd->reg_cache[regaddr].vtime = time(NULL);
 
-	char dbuf[64];
-	char topic[128];
-	// TODO better framework for deciding what to publish, and topics for each
 	if(regaddr == OM_REGADDR_CURRENT_TEMP) {
 		nd->cur_temp = omcf_temp(val, 1);
-		sprintf(dbuf, "%.1f", nd->cur_temp);
-		sprintf(topic, "omnistat/%s/current", nd->name);
-		mqtt_publish(topic, dbuf);
-	}
-	if(regaddr == OM_REGADDR_MODEL) {
-		nd->model = val;
-		omcs_model(dbuf, nd->model);
-		sprintf(topic, "omnistat/%s/model", nd->name);
-		mqtt_publish(topic, dbuf);
 	}
 }
 

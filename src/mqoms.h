@@ -153,5 +153,7 @@ extern void oms_nd_regdata(OmsNode *nd, guint regaddr, guchar val);
 extern void oms_nd_update_state(OmsNode *nd);
 void oms_msg_print(OmsMessage *msg, char *str);
 void per_minute_init();
-	
+
+#define MQSTRSIZE 128
+
 #endif
