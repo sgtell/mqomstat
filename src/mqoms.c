@@ -18,6 +18,7 @@
 #include <tty.h>
 #include <asciiutils.h>
 #include <omnistat.h>
+#include <utils.h>
 
 extern 	OmsChan *g_omc;
 extern int g_verbose;
@@ -408,11 +409,15 @@ oms_nd_regdata(OmsNode *nd, guint regaddr, guchar val)
 	int max_regs = om_model_table_size(model);
 	if(regtab && regaddr < max_regs) {
 		if(regtab[regaddr].flags & PUBA
+		   || (nd->reg_cache[regaddr].flags & PUB_NEXT)
 		   || ( (regtab[regaddr].flags & PUBC)
-			&& (val != nd->reg_cache[regaddr].val))) {
+			&& (val != nd->reg_cache[regaddr].val))
+		   || ( (regtab[regaddr].flags & PUBC)
+			&& (nd->reg_cache[regaddr].vtime < 10)) ) {
 			snprintf(topic, MQSTRSIZE, "omnistat/%s/%s", nd->name, regtab[regaddr].topic);
 			omcs_regval(dbuf, regaddr, val, model);
 			mqtt_publish(topic, dbuf);
+			nd->reg_cache[regaddr].flags &= ~PUB_NEXT;
 		}
 	}
 
@@ -728,28 +733,110 @@ per_minute_init()
 	per_minute_callback((gpointer)0xffffffff);  // go ahead and send the get-group data
 }
 
-
-// compute x - y for two timevals.
-int
-timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y)
+OmsNode *
+mqoms_find_node(OmsChan *omc, char *name)
 {
-       /* Perform the carry for the later subtraction by updating y. */
-       if (x->tv_usec < y->tv_usec) {
-         int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
-         y->tv_usec -= 1000000 * nsec;
-         y->tv_sec += nsec;
-       }
-       if (x->tv_usec - y->tv_usec > 1000000) {
-         int nsec = (x->tv_usec - y->tv_usec) / 1000000;
-         y->tv_usec += 1000000 * nsec;
-         y->tv_sec -= nsec;
-       }
-     
-       /* Compute the time remaining to wait.
-          tv_usec is certainly positive. */
-       result->tv_sec = x->tv_sec - y->tv_sec;
-       result->tv_usec = x->tv_usec - y->tv_usec;
-     
-       /* Return 1 if result is negative. */
-       return x->tv_sec < y->tv_sec;
+	for(int i = 0; i < 128; i++) {
+		if(omc->nodes[i]) 
+			if(strcmp(omc->nodes[i]->name, name) == 0)
+				return omc->nodes[i];
+	}
+	return NULL;
+}
+
+void
+mq_recv_message(char *topic, char *payload)
+{
+	char *me = strtok(topic, "/");
+	if(strcmp(me, "omnistat") != 0)
+		return;
+	char *tstatname = strtok(NULL, "/");
+	char *cmd = strtok(NULL, "/");
+
+	if(strcmp(cmd, "getreg") != 0
+		&& strcmp(cmd, "set") != 0)  // early reject of things we don't respond to, including things we send!
+		return;
+	
+	char *regname = strtok(NULL, "/");
+
+	printf("recieved mqtt message: %s %s", me, tstatname);
+	if(cmd)
+		printf(" cmd=%s", cmd);
+	if(regname)
+		printf(" reg=%s", regname);
+	printf("\n");
+	
+	OmsNode *nd = mqoms_find_node(g_omc, tstatname);
+
+	// if tstatname == "server"  // maybe maintenance or diagnostic commands for us here
+	if(nd) {
+		printf("  target node=%s addr=%d payload=%s\n", nd->name, nd->addr, payload);
+		if(strcmp(cmd, "getreg") == 0) {
+			oms_nd_get_reg_str(nd, regname);
+
+		} else if(strcmp(cmd, "set") == 0) {
+			oms_nd_set_reg_str(nd, regname, payload);
+		}
+	}
+}
+
+
+// set a thermostat register to a new value
+// register name and new value are both strings to be looked up and converted
+// to register number and binary-byte value
+void
+oms_nd_set_reg_str(OmsNode *nd, char *regname, char *valstr)
+{
+	uint8_t sbuf[16];
+	struct omst_reg *regtab = om_model_table(nd->model);   // TODO avoid doing this twice, once here
+	int regno = oms_nd_lookup_reg_by_topic(nd, regname); 	// and again in here
+	if(g_verbose)
+		printf("nd_set_reg_str regno=0x%02x\n", regno);
+	if(regno >= 0) {
+		uint8_t valbyte = regtab[regno].cvt_byte(valstr);
+
+		if(g_verbose) {
+			printf("nd_set_reg_str(%s, regname=%s valstr=%s valbyte=0x%02x\n",
+			       nd->name, regname, valstr, valbyte);
+
+		}
+		sbuf[0] = regno;
+		sbuf[1] = valbyte;
+		oms_node_send_msg_setregs(nd, sbuf, 2);
+		oms_node_send_msg_readregs(nd, regno, 1);  // read it back, and maybe publish
+	}
+}
+
+// retrieve a value from a register.
+// maybe first check the cache?
+// but likely have to send a read to the thermostat, and arrange for the reply value to get published
+// later when its recieved.
+void
+oms_nd_get_reg_str(OmsNode *nd, char *regname)
+{
+	int regno = oms_nd_lookup_reg_by_topic(nd, regname); 	// and again in here
+	if(regno >= 0) {
+		nd->reg_cache[regno].flags |= PUB_NEXT;	// publish on next read-reply
+		oms_node_send_msg_readregs(nd, regno, 1);  // que msg to do the read
+	}
+}
+
+
+// find register whose mqtt-topic matches regname, and return the register number.
+// topics can depend on thermostat model, so look in the right table.
+// return -1 if not found.
+int
+oms_nd_lookup_reg_by_topic(OmsNode *nd, char *regname)
+{
+	struct omst_reg *regtab = om_model_table(nd->model);
+	int max_regs = om_model_table_size(nd->model);
+
+	if(regtab) {
+		for(int i = 0; i < max_regs; i++) {
+			if(regtab[i].topic && (strcmp(regtab[i].topic, regname) == 0))
+				return i;
+		}
+		return -1;
+	} else
+		return -1;
 }

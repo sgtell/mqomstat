@@ -8,8 +8,7 @@
 
 #define HOST "localhost"
 #define ADDRESS     "tcp://localhost:1883"
-#define CLIENTID    "ExampleClientSub"
-#define TOPIC       "omnistat/xtopic"
+#define TOPIC       "omnistat/#"
 #define TIMEOUT     10000L
 
 static struct mosquitto *mosq;
@@ -32,7 +31,8 @@ void on_connect(struct mosquitto *mosq, void *obj, int rc)
 
 void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *msg)
 {
-	printf("Received message: %s on topic %s\n", (char *)msg->payload, msg->topic);
+//	printf("Received message: %s on topic %s\n", (char *)msg->payload, msg->topic);
+	mq_recv_message( msg->topic, (char *)msg->payload );
 }
 
 void on_disconnect(struct mosquitto *mosq, void *obj, int rc)

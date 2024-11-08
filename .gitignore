@@ -1,5 +1,6 @@
 # special cases for this package
 mqomstat
+*~
 
 # Prerequisites
 *.d

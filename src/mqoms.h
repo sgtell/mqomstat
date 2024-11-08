@@ -25,6 +25,7 @@
 #ifndef MQOMS_H
 #define MQOMS_H
 
+#include <stdint.h>
 #include <omnistat.h>
 
 // going back & forth about whether these defs belong in omnistat.h or here
@@ -103,10 +104,15 @@ struct _OmsMessage {
 };
 typedef struct _OmsMessage OmsMessage;
 
+enum omsRegValFlags {
+	PUB_NEXT = 1
+};
+
 // data about each register in the thermostat
 struct _OmsRegVal {
-	unsigned char val; 	// raw value
 	time_t vtime;		// time last value recieved
+	uint8_t  val; 		// raw value
+	enum omsRegValFlags  flags;  // PUB_NEXT, etc.
 };
 typedef struct _OmsRegVal OmsRegVal;
 
@@ -153,6 +159,11 @@ extern void oms_nd_regdata(OmsNode *nd, guint regaddr, guchar val);
 extern void oms_nd_update_state(OmsNode *nd);
 void oms_msg_print(OmsMessage *msg, char *str);
 void per_minute_init();
+extern void mq_recv_message(char *topic, char *payload	);
+
+extern int oms_nd_lookup_reg_by_topic(OmsNode *nd, char *regname);
+extern void oms_nd_set_reg_str(OmsNode *nd, char *regname, char *valstr);
+extern void oms_nd_get_reg_str(OmsNode *nd, char *regname);
 
 #define MQSTRSIZE 128
 
