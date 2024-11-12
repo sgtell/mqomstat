@@ -98,6 +98,21 @@ oms_chan_add_node(OmsChan *omc, guint addr, char *name)
 	return nd;
 }
 
+// print list of configured nodes
+void
+oms_chan_dump_nodes(OmsChan *omc)
+{
+	int a;
+	printf("Channel %s\n", omc->fname);
+	for(a = 0; a < 128; a++) {
+		if(omc->nodes[a]) {
+			OmsNode *nd = omc->nodes[a];
+			printf("  [%d] \"%s\" state=%d\n", a, nd->name, nd->state);
+		}
+	}
+}
+
+
 /*
  * Clear a channel that is waiting for a reply so that it can be used
  * to send another message.  The next message in the queue is sent.

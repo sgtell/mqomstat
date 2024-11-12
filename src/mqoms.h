@@ -151,6 +151,7 @@ void oms_chan_recv(OmsChan *omc); // called when select() says there's somthing 
 void oms_chan_dispatch(OmsChan *omc);
 extern void oms_chan_print(OmsChan *omc);
 OmsNode *oms_chan_add_node(OmsChan *omc,  guint node, char *name);
+extern void oms_chan_dump_nodes(OmsChan *omc);
 void oms_chan_timeout_handler(OmsChan *omc, OmsMessage *msg, int err);
 void oms_chan_reply_handler(OmsChan *omc, OmsMessage *msg, int error);
 

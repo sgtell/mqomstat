@@ -67,10 +67,86 @@ poll_loop(OmsChan *omc)
         g_main_loop_run(mainloop);
 }
 
+GKeyFile *g_cfg_file;
+char *g_devname;
+
+int
+read_config_file(char *fname)
+{
+	g_autoptr(GError) error = NULL;
+	g_cfg_file = g_key_file_new ();
+	int flags = 0;
+
+	if (!g_key_file_load_from_file (g_cfg_file, fname, flags, &error)) {
+		if (!g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
+			g_warning ("Error loading config file: %s", error->message);
+		return 1;
+	}
+	g_devname = g_key_file_get_string (g_cfg_file, "server", "device", &error);
+	if (g_devname == NULL &&
+	    !g_error_matches (error, G_KEY_FILE_ERROR, G_KEY_FILE_ERROR_KEY_NOT_FOUND)) {
+		g_warning ("Error finding key in key file: %s", error->message);
+		return 1;
+	} 
+
+	
+}
+
+int
+nodes_from_config_file()
+{
+	gsize ngroups;
+	gchar** groups = g_key_file_get_groups (g_cfg_file, &ngroups);
+	g_autoptr(GError) error = NULL;
+	int i;
+	int addr;
+	char *name;
+	int enabled;
+	for(i = 0; i < ngroups; i++) {
+//		printf("group: %s:\n", groups[i]);
+		if(strcmp(groups[i], "server")) {
+			addr = -1;
+			name = NULL;
+			enabled = 0;
+
+			name = g_key_file_get_string (g_cfg_file, groups[i], "name", &error);
+
+//		if(name == NULL || !g_error_matches (error, G_KEY_FILE_ERROR, G_KEY_FILE_ERROR_KEY_NOT_FOUND)) {
+//			printf("  name: %s\n", error->message);
+//		} else
+//			printf("  name=%s\n", name);
+	
+			error = NULL;
+			addr = g_key_file_get_integer (g_cfg_file, groups[i], "address", &error);
+			if(!g_error_matches (error, G_KEY_FILE_ERROR, G_KEY_FILE_ERROR_KEY_NOT_FOUND)) {
+//			printf("  addr: %s\n", error->message);
+			} 
+			else
+//				printf("  addr=%d\n", addr);
+		
+			error = NULL;
+			enabled = g_key_file_get_boolean (g_cfg_file, groups[i], "enabled", &error);
+			if(!g_error_matches (error, G_KEY_FILE_ERROR, G_KEY_FILE_ERROR_KEY_NOT_FOUND)) {
+//			printf("  enabled: %s\n", error->message);
+			} 
+
+//			printf("  name=%s addr=%d enab=%d\n", name, addr, enabled);
+			if(enabled && name && addr > 0) {
+				oms_chan_add_node(g_omc, addr, name);
+				g_free(name);
+			}
+		}
+	}
+	oms_chan_dump_nodes(g_omc);
+}
+
+
 void usage()
 {
-        fprintf(stderr, "Usage: %s [options] <file> ... \n", g_progname);
+        fprintf(stderr, "Usage: %s [options] <device> ... \n", g_progname);
         fprintf(stderr, "Options:\n");
+        fprintf(stderr, "\t-c config file name\n");
+        fprintf(stderr, "\t-d serial device name\n");
         fprintf(stderr, "\t-a thermostat-address\n");
         fprintf(stderr, "\t-n thermostat-name\n");
         fprintf(stderr, "\t-v verbose\n");
@@ -79,7 +155,7 @@ void usage()
 int
 main(int argc, char **argv) 
 {
-        char *dev;
+        char *dev = NULL;
         GError *error;
         extern int optind;
         extern char *optarg;
@@ -88,11 +164,20 @@ main(int argc, char **argv)
 
 	int opt_a = 0;
 	char *opt_n = NULL;
+	char *opt_c = NULL;
+	char *opt_d = NULL;
+		
 	g_progname = argv[0];
-        while ((c = getopt (argc, argv, "a:n:vx")) != EOF) {
+        while ((c = getopt (argc, argv, "a:c:d:n:vx")) != EOF) {
                 switch(c) {
                 case 'a':
                         opt_a = strtoul(optarg, NULL, 0);
+                        break;
+                case 'c':
+                        opt_c = optarg;
+                        break;
+                case 'd':
+                        opt_d = optarg;
                         break;
                 case 'n':
                         opt_n = g_strdup(optarg);
@@ -111,25 +196,43 @@ main(int argc, char **argv)
                 usage();
                 exit(1);
         }
-        if(optind >= argc)  {
-                fprintf(stderr, "usage: %s serial-device\n", g_progname);
+        if(optind != argc)  {
+		printf("optind=%d argc=%d\n", optind, argc);
+                usage();
                 exit(1);
-        } else {
-		dev = argv[optind];
         }
 
-	if(!opt_a)
-		opt_a = 1;
-	if(!opt_n)
-		opt_n = g_strdup("hvac");
+	if(opt_c) {
+		read_config_file(opt_c);
+	}
 
-	g_omc = oms_chan_open(dev);
+	if(opt_d) {
+		if(g_devname)
+			g_free(g_devname);
+		g_devname = g_strdup(opt_d);
+	}	
+	if(!g_devname) {
+		printf("serial device must be specified in config file or with the -d option\n");
+                usage();
+                exit(1);
+	}
+	
+	g_omc = oms_chan_open(g_devname);
 	if(!g_omc)
 		exit(1);
-//	oms_list_init_1(opt_a, opt_n);
+
 	if(g_verbose)
 		g_omc->flags |= KCH_FLAG_VERBOSE;
-	oms_chan_add_node(g_omc, opt_a, opt_n);
+
+	if(opt_c)
+		nodes_from_config_file();
+	else {
+		if(!opt_a)
+			opt_a = 1;
+		if(!opt_n)
+			opt_n = g_strdup("hvac");
+		oms_chan_add_node(g_omc, opt_a, opt_n);
+	}
 	
 	per_minute_init();
 	
