@@ -88,22 +88,22 @@ struct omst_reg rc8x_regs[] = {
 	{ "reserved",           RESV, NULL,             NULL }, /* 39 */
 
 	{ "day",                  OK, omcs_day,  omcb_int  }, /* 3A */
-	{ "cool setpoint",   PUBA|SV|OK, omcs_temp, omcb_temp, "cool_set"}, /* 3B */
-	{ "heat setpoint",   PUBA|SV|OK, omcs_temp, omcb_temp, "heat_set"}, /* 3C */
+	{ "cool setpoint",   PUBA|SV|OK, omcs_temp, omcb_temp, "cool_set"  }, /* 3B */
+	{ "heat setpoint",   PUBA|SV|OK, omcs_temp, omcb_temp, "heat_set"  }, /* 3C */
 	{ "thermostat mode", PUBA|SV|OK, omcs_mode, omcb_mode, "tstatmode" }, /* 3D */
-	{ "fan mode",        PUBC|SV|OK, omcs_fanm, omcb_fanm, "fanmode"}, /* 3E */
+	{ "fan mode",        PUBC|SV|OK, omcs_fanm, omcb_fanm, "fanmode"   }, /* 3E */
 	{ "hold",            PUBC|SV|OK, omcs_hold, omcb_hold, "holdmode"  }, /* 3F */
 
-	{ "current temp",   PUBA|ROK, omcs_temp,  NULL,     "current" }, /* 40 */
+	{ "current temp",   PUBA|ROK, omcs_temp,  NULL,    "current"    }, /* 40 */
 	{ "seconds",              OK, omcs_int,  omcb_int  }, /* 41 */
 	{ "minutes",              OK, omcs_int,  omcb_int  }, /* 42 */
 	{ "hours",                OK, omcs_int,  omcb_int  }, /* 43 */
 	{ "outside temp",         OK, omcs_temp, omcb_temp }, /* 44 */
 	{ "reserved",           RESV, omcs_int,   NULL     }, /* 45 */
 	{ "RTP mode",          SV|OK, omcs_int,  omcb_int  }, /* 46 */
-	{ "current mode",   PUBA|ROK, omcs_mode,  NULL ,   "curmode"   }, /* 47 */
-	{ "output status",  PUBA|ROK, omcs_outst,   NULL,  "outstatus"   }, /* 48 */
-	{ "model",          PUBA|ROK, omcs_model, NULL,   "model"    }, /* 49 */
+	{ "current mode",   PUBA|ROK, omcs_mode,  NULL,    "curmode"     }, /* 47 */
+	{ "output status",  PUBA|ROK, omcs_outst, NULL,    "outstatus"   }, /* 48 */
+	{ "model",          PUBA|ROK, omcs_model, NULL,    "model"       }, /* 49 (73 decimal)*/
 };
 
 const int rc8x_nregs = sizeof(rc8x_regs)/sizeof(struct omst_reg);
@@ -178,22 +178,22 @@ struct omst_reg rc2000_regs[] = {
 	{ "outside humidity",       OK, omcs_int,    omcb_int }, /* 39 */
 
 	{ "day (0=sunday",          OK, omcs_day,  omcb_int  }, /* 3A */
-	{ "cool setpoint",     SV|OK, omcs_temp, omcb_temp }, /* 3B */
-	{ "heat setpoint",     SV|OK, omcs_temp, omcb_temp }, /* 3C */
-	{ "thermostat mode",   SV|OK, omcs_mode, omcb_mode }, /* 3D */
-	{ "fan mode",          SV|OK, omcs_fanm, omcb_fanm }, /* 3E */
-	{ "hold",              SV|OK, omcs_hold, omcb_hold  }, /* 3F (63) (0=Off, 1=On, 2=Vacation) */
+	{ "cool setpoint",     PUBA|SV|OK, omcs_temp, omcb_temp, "cool_set"   }, /* 3B */
+	{ "heat setpoint",     PUBA|SV|OK, omcs_temp, omcb_temp, "heat_set"   }, /* 3C */
+	{ "thermostat mode",   PUBA|SV|OK, omcs_mode, omcb_mode, "tstatmode"  }, /* 3D */
+	{ "fan mode",          PUBC|SV|OK, omcs_fanm, omcb_fanm, "fanmode"    }, /* 3E */
+	{ "hold",              PUBC|SV|OK, omcs_hold, omcb_hold, "holdmode"   }, /* 3F (63) (0=Off, 1=On, 2=Vacation) */
 
-	{ "current temp",        ROK, omcs_temp,  NULL     }, /* 40 */
+	{ "current temp",      PUBA|ROK, omcs_temp,  NULL, "current"     }, /* 40 */
 	{ "seconds",              OK, omcs_int,  omcb_int  }, /* 41 */
 	{ "minutes",              OK, omcs_int,  omcb_int  }, /* 42 */
 	{ "hours",                OK, omcs_int,  omcb_int  }, /* 43 */
 	{ "outside temp",         OK, omcs_temp, omcb_temp }, /* 44 */
 	{ "reserved",           RESV, omcs_int,   NULL     }, /* 45 */
 	{ "RTP mode",          SV|OK, omcs_int,  omcb_int  }, /* 46 */
-	{ "current mode",        ROK, omcs_mode,  NULL     }, /* 47 */
-	{ "output status",       ROK, omcs_outst,   NULL     }, /* 48 */
-	{ "model",               ROK, omcs_model, NULL     }, /* 0x49 (73) */
+	{ "current mode",   PUBA|ROK, omcs_mode,  NULL,    "curmode"     }, /* 47 */
+	{ "output status",  PUBA|ROK, omcs_outst, NULL,    "outstatus"   }, /* 48 */
+	{ "model",          PUBA|ROK, omcs_model, NULL,    "model"       }, /* 49 */
 	
 	{ "Current energy cost", OK, omcs_int, omcb_int }, /* 0x50 (74) */
 
@@ -550,7 +550,8 @@ void omcs_model(char *sp, unsigned char b)
 	case 50:
 		strcpy(sp, "RC-122");
 		break;
-	case 0x78:
+	case 0x73:	// returned by actual example RC-2000
+	case 0x78:	// ?
 		strcpy(sp, "RC-2000");
 		break;
 	default:
@@ -575,6 +576,7 @@ om_model_table(unsigned char model)
 	case 50:
 		return rc8x_regs;
 	case 0x78:
+	case 0x73:
 		return rc2000_regs;
 	default:
 		return NULL;
@@ -595,6 +597,7 @@ int om_model_table_size(unsigned char model)
 	case 49:
 	case 50:
 		return rc8x_nregs;
+	case 0x73:
 	case 0x78:
 		return rc2000_nregs;
 	default:

@@ -125,7 +125,7 @@ oms_chan_clear(void *p)
 {
 	OmsChan *omc = (OmsChan *)p;
 	
-	fprintf(stderr, "Omnistat: timeout on %s\n", omc->fname);
+//	fprintf(stderr, "Omnistat: timeout on %s\n", omc->fname);
 	omc->state =  KCH_STATE_IDLE;
 	if(omc->totimer) {
 		g_source_remove(omc->totimer);
@@ -308,6 +308,7 @@ oms_chan_timeout_handler(OmsChan *omc, OmsMessage *msg, int err)
 			return;
 	}
 	nd = omc->nodes[nodeno];
+	printf("timeout on %s for node %d/%s\n", omc->fname, nd->addr, nd->name);
 	oms_nd_update_state(nd);   // might declare the node dead
 }
 
@@ -410,9 +411,6 @@ void
 oms_nd_regdata(OmsNode *nd, guint regaddr, guchar val)
 {
 	int model;
-	if(nd->omc->flags & KCH_FLAG_VERBOSE) {
-		printf("reg[0x%02x]: newval 0x%02x\n", regaddr, val);
-	}
 	if(regaddr == OM_REGADDR_MODEL)
 		nd->model = val;
 	model = nd->model;   // special case because we need the model code to do the others!
@@ -422,6 +420,9 @@ oms_nd_regdata(OmsNode *nd, guint regaddr, guchar val)
 	
 	struct omst_reg *regtab = om_model_table(model);
 	int max_regs = om_model_table_size(model);
+	if(nd->omc->flags & KCH_FLAG_VERBOSE) {
+		printf("%s reg[0x%02x]: newval 0x%02x regtab=%p\n", nd->name, regaddr, val, regtab);
+	}
 	if(regtab && regaddr < max_regs) {
 		if(regtab[regaddr].flags & PUBA
 		   || (nd->reg_cache[regaddr].flags & PUB_NEXT)
@@ -450,7 +451,7 @@ oms_chan_enqueue_msg(OmsChan *omc, OmsMessage *msg)
 	msg->omc = omc;
 	msg->qtime = time(NULL);
 	if(omc->flags & KCH_FLAG_VERBOSE) {
-		printf("enqueue id=%d cmd=%d\n", msg->id, msg->sdata[0]);
+		printf("enqueue mid=%d cmd=%d\n", msg->id, msg->sdata[0]);
 	}
 		
 	omc->sendq = g_list_append(omc->sendq, msg);
@@ -464,7 +465,7 @@ oms_msg_print(OmsMessage *msg, char *str)
 	int i;
 	if(str)
 		printf("om_msg(\"%s\") ", str);
-	printf("id=%d scmd=%d slen=%d", msg->id, msg->sdata[0], msg->slength);
+	printf("mid=%d scmd=%d saddr=%d slen=%d", msg->id, msg->sdata[0], msg->nodeno, msg->slength);
 	if(msg->slength > 1) {
 		printf(":(");
 		for(i = 1; i < msg->slength; i++)
@@ -667,8 +668,8 @@ oms_list_per_minute()
 	for(i = 1; i < 128; i++) {
 		if(omc->nodes[i]) {
 			nd = omc->nodes[i];
-//			oms_node_send_msg_getg(nd);
-			oms_node_send_msg_readregs(nd, OM_REGADDR_STATUS, OM_REGADDR_STATUS_LEN);
+			if(nd->state == NODE_ALIVE) 
+				oms_node_send_msg_readregs(nd, OM_REGADDR_STATUS, OM_REGADDR_STATUS_LEN);
 		}
 	}
 }

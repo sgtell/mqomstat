@@ -227,10 +227,10 @@ main(int argc, char **argv)
 	if(opt_c)
 		nodes_from_config_file();
 	else {
-		if(!opt_a)
-			opt_a = 1;
-		if(!opt_n)
-			opt_n = g_strdup("hvac");
+		if(!opt_a || !opt_n) {
+			fprintf(stderr, "either specify -c config-file or -n nodename -a address\n");
+			exit(1);
+		}
 		oms_chan_add_node(g_omc, opt_a, opt_n);
 	}
 	
