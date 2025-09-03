@@ -16,6 +16,8 @@
 int g_verbose;
 int g_debug;
 char *g_progname;
+char *g_mqtt_host = NULL;
+int g_mqtt_port = -1;
 
 OmsChan *g_omc = NULL;   // just one for now.  todo: more serial channels
 
@@ -49,7 +51,7 @@ poll_loop(OmsChan *omc)
         GMainLoop *mainloop;
         mainloop = g_main_loop_new(NULL, TRUE);
 
-	mqtt_setup(mainloop);
+	mqtt_setup(mainloop, g_mqtt_host, g_mqtt_port);
 	
 	// Add signal handlers for graceful shutdown
 	guint signal_handler_id = g_unix_signal_add(SIGTERM, signal_handler, mainloop);
@@ -89,7 +91,12 @@ read_config_file(char *fname)
 		return 1;
 	} 
 
-	
+	g_mqtt_host = g_key_file_get_string (g_cfg_file, "server", "mqtt_host", &error);
+	char *mport_str = g_key_file_get_string (g_cfg_file, "server", "mqtt_port", &error);
+	if(mport_str)
+		g_mqtt_port = atoi(mport_str);
+	else
+		g_mqtt_port = -1;
 }
 
 int

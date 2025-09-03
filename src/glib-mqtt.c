@@ -6,8 +6,8 @@
 #include <mosquitto.h>
 #include <mqoms.h>
 
-#define HOST "localhost"
-#define ADDRESS     "tcp://localhost:1883"
+#define DEF_HOST "localhost"
+#define DEF_PORT 1883
 #define TOPIC       "omnistat/#"
 #define TIMEOUT     10000L
 
@@ -78,9 +78,13 @@ mosquitto_misc_dispatch(gpointer user_data)
 
 // Initialize the MQTT client
 int
-mqtt_setup( GMainLoop *loop)
+mqtt_setup( GMainLoop *loop, char *host, int port)
 {
 	int rc;
+	if(host == NULL)
+		host = DEF_HOST;
+	if(port < 0)
+		port = DEF_PORT;
 
 	// Initialize the Mosquitto library
 	mosquitto_lib_init();
@@ -99,8 +103,8 @@ mqtt_setup( GMainLoop *loop)
 	printf("got mosq client fd=%d; trying to connect:\n", mosquitto_socket(mosq));
 	
 	// Connect to the MQTT broker
-	if (mosquitto_connect(mosq, HOST, 1883, 60) != MOSQ_ERR_SUCCESS) {
-		fprintf(stderr, "Failed to connect to broker\n");
+	if (mosquitto_connect(mosq, host, port, 60) != MOSQ_ERR_SUCCESS) {
+		fprintf(stderr, "Failed to connect to mqtt broker at %s:%d\n", host, port);
 		return 1;
 	}
 
