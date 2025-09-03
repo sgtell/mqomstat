@@ -668,7 +668,7 @@ oms_list_per_minute()
 	for(i = 1; i < 128; i++) {
 		if(omc->nodes[i]) {
 			nd = omc->nodes[i];
-			if(nd->state == NODE_ALIVE) 
+//			if(nd->state == NODE_ALIVE) 
 				oms_node_send_msg_readregs(nd, OM_REGADDR_STATUS, OM_REGADDR_STATUS_LEN);
 		}
 	}
@@ -685,6 +685,26 @@ oms_list_per_hour()
 			nd = omc->nodes[i];
 			oms_node_set_clock(nd);
 			oms_node_send_msg_readregs(nd, OM_REGADDR_MODEL, 1);
+		}
+	}
+}
+
+// force node state to dead, and publish mqtt to that effect
+void
+oms_list_goodbye()
+{
+	OmsChan *omc = g_omc;
+	OmsNode *nd;
+	int i;
+	for(i = 1; i < 128; i++) {
+		if(omc->nodes[i]) {
+			nd = omc->nodes[i];
+			if(nd->state != NODE_DEAD) {
+				char topic[128];
+				nd->state = NODE_DEAD;
+				sprintf(topic, "omnistat/%s/state", nd->name);
+				mqtt_publish(topic, "dead");
+			}
 		}
 	}
 }

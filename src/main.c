@@ -19,6 +19,9 @@ char *g_progname;
 char *g_mqtt_host = NULL;
 int g_mqtt_port = -1;
 
+void publish_hello();
+void publish_goodbye();
+
 OmsChan *g_omc = NULL;   // just one for now.  todo: more serial channels
 
 /*
@@ -66,11 +69,28 @@ poll_loop(OmsChan *omc)
 
 	if(g_verbose)
 		printf("starting main loop");
+	publish_hello();
         g_main_loop_run(mainloop);
+
+	publish_goodbye();
 }
 
 GKeyFile *g_cfg_file;
 char *g_devname;
+char *g_devname_noslash;
+
+void
+finalize_devname()
+{
+	if(g_devname_noslash)
+		g_free(g_devname_noslash);
+	g_devname_noslash = g_strdup(g_devname);
+	char *cp;
+	for(cp = g_devname_noslash; *cp; cp++) {
+		if(*cp == '/')
+			*cp = '_';
+	}
+}
 
 int
 read_config_file(char *fname)
@@ -148,6 +168,24 @@ nodes_from_config_file()
 }
 
 
+void
+publish_hello()
+{
+	char topic[128];
+	sprintf(topic, "omnistat/server/%s/state", g_devname_noslash);
+	mqtt_publish(topic, "alive");
+}
+
+void
+publish_goodbye()
+{
+	oms_list_goodbye();
+	char topic[128];
+	sprintf(topic, "omnistat/server/%s/state", g_devname_noslash);
+	mqtt_publish(topic, "dead");
+
+}
+
 void usage()
 {
         fprintf(stderr, "Usage: %s [options] <device> ... \n", g_progname);
@@ -223,6 +261,7 @@ main(int argc, char **argv)
                 usage();
                 exit(1);
 	}
+	finalize_devname();
 	
 	g_omc = oms_chan_open(g_devname);
 	if(!g_omc)

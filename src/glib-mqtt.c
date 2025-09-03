@@ -63,7 +63,6 @@ mosquitto_fd_dispatch(GIOChannel* source,
 	new_mosq_fd = mosquitto_socket(mosq);
 	if(new_mosq_fd != mosq_fd) {
 		printf("mosq_fd was %d now %d\n", mosq_fd, new_mosq_fd);
-		// TODO what to do to tell GMainLoop
 	}
 }
 
@@ -116,7 +115,7 @@ mqtt_setup( GMainLoop *loop, char *host, int port)
 		       mosquitto_fd_dispatch, 
 		       (gpointer)mosq);
 
-	// TODO set up periodic timer that will call mosquitto_loop_misc
+	// set up periodic timer that will call mosquitto_loop_misc
 	mosq_misc_timer_tag = g_timeout_add(500, mosquitto_misc_dispatch, mosq);
 	return 1;
 }

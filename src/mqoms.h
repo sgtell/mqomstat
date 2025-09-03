@@ -165,6 +165,7 @@ extern void mq_recv_message(char *topic, char *payload	);
 extern int oms_nd_lookup_reg_by_topic(OmsNode *nd, char *regname);
 extern void oms_nd_set_reg_str(OmsNode *nd, char *regname, char *valstr);
 extern void oms_nd_get_reg_str(OmsNode *nd, char *regname);
+extern void oms_list_goodbye();
 
 #define MQSTRSIZE 128
 
